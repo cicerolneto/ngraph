@@ -2628,12 +2628,12 @@ NGRAPH_TEST(${BACKEND_NAME}, cross_entropy_with_soft_labels)
     EXPECT_TRUE(test::all_close_f(result, expected, 23));
 }
 
-NGRAPH_TEST(${BACKEND_NAME}, cross_entropy_with_one_hot)
+NGRAPH_TEST(${BACKEND_NAME}, cross_entropy2_with_one_hot)
 {
     Shape tensor_shape{2, 4};
     auto input = make_shared<op::Parameter>(element::f32, tensor_shape);
     auto labels = make_shared<op::Parameter>(element::i32, Shape{2, 1});
-    auto cross_entropy = make_shared<op::CrossEntropy>(input, labels, false);
+    auto cross_entropy = make_shared<op::CrossEntropy2>(input, labels, false);
     auto f0 = make_shared<Function>(NodeVector{cross_entropy}, ParameterVector{input, labels});
     auto backend = runtime::Backend::create("${BACKEND_NAME}");
 

@@ -1607,6 +1607,8 @@ private:
         case OP_TYPEID::CropAndResize:
         case OP_TYPEID::CrossEntropy:
         case OP_TYPEID::CrossEntropyBackprop:
+        case OP_TYPEID::CrossEntropy2:
+        case OP_TYPEID::CrossEntropy2Backprop:
         case OP_TYPEID::DepthToSpace:
         case OP_TYPEID::DynBroadcast:
         case OP_TYPEID::DynPad:
