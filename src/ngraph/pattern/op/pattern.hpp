@@ -33,10 +33,14 @@ namespace ngraph
             public:
                 /// \brief \p a base class for \sa Skip and \sa Label
                 ///
-                Pattern(const NodeVector& nodes, Predicate pred)
-                    : Node(nodes)
+                Pattern(const OutputVector& wrapped_values, Predicate pred)
+                    : Node(wrapped_values)
                     , m_predicate(pred)
                 {
+                    if (!m_predicate)
+                    {
+                        m_predicate = [](std::shared_ptr<Node>) { return true; };
+                    }
                 }
 
                 virtual std::shared_ptr<Node>
