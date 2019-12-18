@@ -47,50 +47,21 @@ namespace ngraph
                                     const std::shared_ptr<Node>& graph_node,
                                     PatternMap& pattern_map)
         {
-            bool is_match = true;
             if (pattern_map.count(label))
             {
-                if (pattern_map[label] != graph_node)
-                {
-                    NGRAPH_DEBUG << "[MATCHER] get_bound_node " << *pattern_map[label] << " , "
-                                 << pattern_map[label] << " does NOT match " << *graph_node;
-                    is_match = false;
-                }
+                return pattern_map[label] == graph_node;
             }
-            else
+            else if (label->get_predicate()(graph_node))
             {
-                auto predicate = label->get_predicate();
-                is_match = predicate(graph_node);
-            }
-
-            if (is_match) // in case label was already bound this rebinds it to the same node
-                          // (harmless; and the logic seems cleaner)
-            {
-                auto args = label->get_arguments();
-                if (args.size() > 0)
+                if (label->get_input_size() == 0 ||
+                    match_node(label->get_argument(0), graph_node, pattern_map))
                 {
-                    if (args.size() != 1)
-                    {
-                        throw ngraph_error("Labels can only take 1 argument!");
-                    }
-                    NGRAPH_DEBUG << "[MATCHER] Label describes a sub graph in the pattern";
-                    is_match = match_node(args.at(0), graph_node, pattern_map);
-                }
-
-                if (is_match)
-                {
-                    NGRAPH_DEBUG << "[MATCHER] (Re)binding get_bound_node " << *label << " , "
-                                 << graph_node << " , " << *graph_node;
                     pattern_map[label] = graph_node;
+                    return true;
                 }
             }
 
-            if (!is_match)
-            {
-                NGRAPH_DEBUG << "[MATCHER] Aborting at " << *graph_node << " for pattern "
-                             << *label;
-            }
-            return is_match;
+            return false;
         }
 
         bool Matcher::is_contained_match(const NodeVector& exclusions, bool ignore_unused)
