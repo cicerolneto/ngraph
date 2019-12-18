@@ -19,12 +19,14 @@
 #include "ngraph/op/constant.hpp"
 #include "ngraph/op/convert.hpp"
 #include "ngraph/op/divide.hpp"
+#include "ngraph/op/equal.hpp"
 #include "ngraph/op/log.hpp"
 #include "ngraph/op/multiply.hpp"
 #include "ngraph/op/negative.hpp"
 #include "ngraph/op/not_equal.hpp"
 #include "ngraph/op/one_hot.hpp"
 #include "ngraph/op/reshape.hpp"
+#include "ngraph/op/select.hpp"
 #include "ngraph/op/subtract.hpp"
 #include "ngraph/op/sum.hpp"
 #include "ngraph/op/util/broadcasting.hpp"
@@ -120,79 +122,78 @@ static std::shared_ptr<ngraph::Node>
 
 NodeVector op::CrossEntropy2::decompose_op() const
 {
-    // we will reshape the labels and input tensor to 2d
-    auto input_to_normalize = get_2d_tensor(input_value(0));
+    auto input = get_2d_tensor(input_value(0));
     auto labels = get_2d_tensor(input_value(1));
-    auto reduction_axis = input_to_normalize.get_shape().size() - 1;
-    auto rank = input_to_normalize.get_shape().size();
+    auto reduction_axis = input.get_shape().size() - 1;
+    /*
+        if (get_input_partial_shape(1).is_dynamic())
+        {
+            NODE_VALIDATION_CHECK(
+                this,
+                PartialShape::merge_into(inputs_shape_scheme, this_input_shape),
+                "Argument shapes are inconsistent; they must have the same rank, and must have ",
+                "equal dimension everywhere except on the concatenation axis (axis ",
+                axis,
+                ").");
+        }
+
+        if (get_inpit_partial_shape(2).is_dynamic())
+        {
+            NODE_VALIDATION_CHECK(
+                this,
+                PartialShape::merge_into(inputs_shape_scheme, this_input_shape),
+                "Argument shapes are inconsistent; they must have the same rank, and must have ",
+                "equal dimension everywhere except on the concatenation axis (axis ",
+                axis,
+                ").");
+        }
+    */
+    auto reshape = [&](const Output<Node>& input, ngraph::Shape shape) {
+        std::vector<size_t> input_order(input.get_shape().size());
+        std::iota(std::begin(input_order), std::end(input_order), 0);
+        std::shared_ptr<ngraph::Node> reshape =
+            std::make_shared<op::Reshape>(input, ngraph::AxisVector(input_order), shape);
+        return reshape;
+    };
 
     auto create_xe = [&](const Output<Node>& one_hot, const Output<Node>& input) {
-        auto node_log = std::make_shared<ngraph::op::Log>(input);
+        auto node_log = std::make_shared<op::Log>(input);
         auto node_mul = one_hot * node_log;
-        auto node_sum = std::make_shared<ngraph::op::Sum>(
-            node_mul, AxisSet{static_cast<size_t>(reduction_axis)});
-
+        auto node_sum =
+            std::make_shared<op::Sum>(node_mul, AxisSet{static_cast<size_t>(reduction_axis)});
         auto input_shape = input.get_shape();
         input_shape.back() = 1;
-        std::vector<size_t> input_order(node_sum->get_shape().size());
-        std::iota(std::begin(input_order), std::end(input_order), 0);
-        std::shared_ptr<ngraph::Node> resh =
-            std::make_shared<op::Reshape>(node_sum, ngraph::AxisVector(input_order), input_shape);
-        return -resh;
+        auto node_sum_reshape = reshape(node_sum, input_shape);
+        return -node_sum_reshape;
     };
-    auto lshape = labels.get_shape();
-    for (const auto& it : lshape)
-    {
-        std::cout << it << " ";
-    }
-    std::cout << std::endl;
 
-    // auto reshape_labels
-    // Create one hot type
+    auto one_hot_shape = input.get_shape();
+    auto rank = one_hot_shape.size() - 1;
     auto label_shape = labels.get_shape();
-    auto intput_to_normalize_size = input_to_normalize.get_shape().size() - 1;
-    std::shared_ptr<ngraph::Node> one_hot_labels; // = labels;
-    std::cout << "LSHAPE " << label_shape.back() << std::endl;
+    std::shared_ptr<ngraph::Node> one_hot_labels;
+
     if (label_shape.back() == 1 && label_shape.size() > 1)
     {
-        std::vector<size_t> input_order(labels.get_shape().size());
-        std::iota(std::begin(input_order), std::end(input_order), 0);
         label_shape.pop_back();
-        std::shared_ptr<ngraph::Node> label_reshape =
-            std::make_shared<op::Reshape>(labels, AxisVector{input_order}, Shape{label_shape});
-        one_hot_labels =
-            std::make_shared<ngraph::op::OneHot>(label_reshape,
-                                                 input_to_normalize.get_shape(),
-                                                 input_to_normalize.get_shape().size() - 1);
+        auto label_reshape = reshape(labels, label_shape);
+        one_hot_labels = std::make_shared<op::OneHot>(label_reshape, one_hot_shape, rank);
     }
     else
     {
-        one_hot_labels = std::make_shared<ngraph::op::OneHot>(
-            labels, input_to_normalize.get_shape(), input_to_normalize.get_shape().size() - 1);
+        one_hot_labels = std::make_shared<op::OneHot>(labels, one_hot_shape, rank);
     }
-    auto convert_one_hot = std::make_shared<ngraph::op::Convert>(
-        one_hot_labels, input_to_normalize.get_element_type());
 
-    std::shared_ptr<ngraph::Node> xe = create_xe(convert_one_hot, input_to_normalize);
+    auto input_type = input.get_element_type();
+    one_hot_labels = std::make_shared<op::Convert>(one_hot_labels, input_type);
+    auto xe = create_xe(one_hot_labels, input);
+    auto mask = create_mask(labels, input, m_ignore_index);
+    mask = std::make_shared<op::Convert>(mask, input_type);
+    xe = xe * mask;
+    auto node_sum = std::make_shared<op::Sum>(one_hot_labels * input, ngraph::AxisSet{rank});
+    auto sum_reshape = reshape(node_sum, mask->get_shape());
+    auto matchx = mask * sum_reshape;
 
-    std::shared_ptr<ngraph::Node> mask = std::make_shared<ngraph::op::Convert>(
-        create_mask(labels, input_to_normalize, m_ignore_index), xe->get_element_type());
-
-    std::shared_ptr<ngraph::Node> xee =
-        std::make_shared<ngraph::op::Convert>(xe, xe->get_element_type());
-    xee = xee * mask;
-
-    auto node_sum = std::make_shared<ngraph::op::Sum>(one_hot_labels * input_to_normalize,
-                                                      ngraph::AxisSet{rank - 1});
-
-    std::vector<size_t> input_order(node_sum->get_shape().size());
-    std::iota(std::begin(input_order), std::end(input_order), 0);
-    auto mask_shape = mask->get_shape();
-
-    std::shared_ptr<ngraph::Node> sum_reshape =
-        std::make_shared<op::Reshape>(node_sum, ngraph::AxisVector(input_order), mask_shape);
-    // auto matchx = mask * node_sum;
-    return {sum_reshape};
+    return {matchx};
 }
 
 shared_ptr<Node> op::CrossEntropy2::copy_with_new_args(const NodeVector& new_args) const
@@ -253,53 +254,68 @@ shared_ptr<Node> op::CrossEntropy2Backprop::copy_with_new_args(const NodeVector&
 
 NodeVector op::CrossEntropy2Backprop::decompose_op() const
 {
-    auto input = get_2d_tensor(input_value(0));
-    auto labels = get_2d_tensor(input_value(1));
-    auto delta = get_2d_tensor(input_value(2));
-    auto rank = input.get_shape().size();
+    auto matchx = get_2d_tensor(input_value(0));
+    auto label = get_2d_tensor(input_value(1));
+    auto x = get_2d_tensor(input_value(2));
+    auto dy = get_2d_tensor(input_value(3));
 
-    size_t one_hot_axis = delta.get_shape().size() - 1;
+    auto reshape = [&](const Output<Node>& input, ngraph::Shape shape) {
+        std::vector<size_t> input_order(input.get_shape().size());
+        std::iota(std::begin(input_order), std::end(input_order), 0);
+        std::shared_ptr<ngraph::Node> reshape =
+            std::make_shared<op::Reshape>(input, ngraph::AxisVector(input_order), shape);
+        return reshape;
+    };
 
-    // always reduces the sum on the last axis
-    auto reduction_axis = delta.get_shape().size() - 1;
-
-    // mask
-    std::shared_ptr<ngraph::Node> mask = nullptr;
-
-    // remove trailing ones from delta
-    auto delta_reshape = std::make_shared<ngraph::op::Reshape>(
-        delta, AxisVector{0, 1}, Shape{delta.get_shape().at(0)});
-    auto delta_bcast = std::make_shared<ngraph::op::Broadcast>(
-        delta_reshape, input.get_shape(), AxisSet{rank - 1});
-
-    if (!m_soft_label)
+    auto matchx_shape = matchx.get_shape();
+    auto label_shape = label.get_shape();
+    auto x_shape = x.get_shape();
+    auto dy_shape = dy.get_shape();
+    if (matchx_shape.back() == 1 && matchx_shape.size() > 1)
     {
-        // ignore mask
-        if (m_ignore_index > 0)
-        {
-            mask = create_mask(labels, input, m_ignore_index);
-            mask = std::make_shared<ngraph::op::Reshape>(
-                mask, AxisVector{0, 1}, Shape{mask->get_shape().at(0)});
-            mask =
-                std::make_shared<ngraph::op::Broadcast>(mask, input.get_shape(), AxisSet{rank - 1});
-        }
-        if (labels.get_shape()[reduction_axis] == 1)
-        {
-            labels =
-                make_shared<op::Reshape>(labels, AxisVector{0, 1}, Shape{labels.get_shape().at(0)});
-        }
-        // one hot encoding of labels
-        auto one_hot =
-            std::make_shared<ngraph::op::OneHot>(labels, input.get_shape(), one_hot_axis);
-        labels = std::make_shared<ngraph::op::Convert>(one_hot, input.get_element_type());
+        matchx_shape.pop_back();
+        matchx = reshape(matchx, matchx_shape);
     }
 
-    std::shared_ptr<ngraph::Node> xe_grad =
-        std::make_shared<ngraph::op::Divide>(-labels * delta_bcast, input);
-
-    if (!m_soft_label && m_ignore_index > 0)
+    if (label_shape.back() == 1 && label_shape.size() > 1)
     {
-        xe_grad = xe_grad * mask;
+        label_shape.pop_back();
+        label = reshape(label, label_shape);
     }
+
+    if (x_shape.back() == 1 && x_shape.size() > 1)
+    {
+        x_shape.pop_back();
+        x = reshape(x, x_shape);
+    }
+
+    if (dy_shape.back() == 1 && dy_shape.size() > 1)
+    {
+        dy_shape.pop_back();
+        dy = reshape(dy, dy_shape);
+    }
+
+    auto rank = x_shape.size();
+    auto x_type = x.get_element_type();
+    auto one_hot = std::make_shared<op::OneHot>(label, x_shape, rank);
+
+    std::shared_ptr<ngraph::Node> one_hot_labels = std::make_shared<op::Convert>(one_hot, x_type);
+
+    auto mask = create_mask(label, x, m_ignore_index);
+    mask = std::make_shared<op::Convert>(mask, x_type);
+
+    auto zero = op::Constant::create(matchx.get_element_type(), matchx.get_shape(), {0});
+    auto one = op::Constant::create(matchx.get_element_type(), matchx.get_shape(), {1});
+
+    auto is_zero = std::make_shared<op::Equal>(matchx, zero);
+    matchx = std::make_shared<ngraph::op::Select>(is_zero, one, matchx);
+
+    auto dy_bcast =
+        std::make_shared<ngraph::op::Broadcast>(mask * dy, x_shape, ngraph::AxisSet{rank - 1});
+
+    auto matchx_bcast =
+        std::make_shared<ngraph::op::Broadcast>(matchx, x_shape, ngraph::AxisSet{rank - 1});
+
+    auto xe_grad = -dy_bcast * one_hot_labels / matchx_bcast;
     return {expand_shape(xe_grad, input_value(0))};
 }
