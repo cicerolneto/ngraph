@@ -26,6 +26,24 @@ namespace ngraph
     {
         namespace op
         {
+            class Label;
+        }
+
+        class Matcher;
+
+        using RPatternMap = std::map<std::shared_ptr<op::Label>, NodeVector>;
+        using PatternMap = std::map<std::shared_ptr<op::Label>, std::shared_ptr<Node>>;
+
+        template <typename T>
+        std::function<bool(std::shared_ptr<Node>)> has_class()
+        {
+            auto pred = [](std::shared_ptr<Node> node) -> bool { return is_type<T>(node); };
+
+            return pred;
+        }
+
+        namespace op
+        {
             using Predicate = std::function<bool(std::shared_ptr<Node>)>;
 
             class NGRAPH_API Pattern : public Node
@@ -50,6 +68,11 @@ namespace ngraph
                 }
 
                 Predicate get_predicate() const;
+
+                bool is_pattern() const override { return true; }
+                virtual bool match_node(pattern::Matcher& matcher,
+                                           const std::shared_ptr<Node>& graph_node,
+                                           pattern::PatternMap& pattern_map) = 0;
 
             protected:
                 std::function<bool(std::shared_ptr<Node>)> m_predicate;

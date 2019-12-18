@@ -258,6 +258,7 @@ namespace ngraph
         virtual bool is_constant() const;
         virtual bool is_null() const { return false; }
         virtual bool is_op() const { return false; }
+        virtual bool is_pattern() const { return false; }
         virtual bool is_commutative() const { return false; }
         virtual bool is_dynamic() const;
         virtual bool has_state() const { return false; }

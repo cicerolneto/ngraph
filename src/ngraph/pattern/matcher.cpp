@@ -43,27 +43,6 @@ namespace ngraph
         constexpr NodeTypeInfo op::Skip::type_info;
 
         std::shared_ptr<Node> Matcher::get_match_root() { return m_match_root; }
-        bool Matcher::match_pattern(const std::shared_ptr<op::Label>& label,
-                                    const std::shared_ptr<Node>& graph_node,
-                                    PatternMap& pattern_map)
-        {
-            if (pattern_map.count(label))
-            {
-                return pattern_map[label] == graph_node;
-            }
-            else if (label->get_predicate()(graph_node))
-            {
-                if (label->get_input_size() == 0 ||
-                    match_node(label->get_argument(0), graph_node, pattern_map))
-                {
-                    pattern_map[label] = graph_node;
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
         bool Matcher::is_contained_match(const NodeVector& exclusions, bool ignore_unused)
         {
             if (exclusions.empty())
@@ -83,71 +62,6 @@ namespace ngraph
             }
 
             return ngraph::get_subgraph_outputs(get_matched_nodes(), exclusions).size() < 2;
-        }
-
-        bool Matcher::match_skip(const std::shared_ptr<op::Skip>& skip,
-                                 const std::shared_ptr<Node>& graph_node,
-                                 PatternMap& pattern_map)
-        {
-            auto predicate = skip->get_predicate();
-
-            if (predicate(graph_node))
-            {
-                return match_arguments(skip, graph_node, pattern_map);
-            }
-            else
-            {
-                auto args = skip->get_arguments();
-                if (args.size() != 1)
-                {
-                    throw ngraph_error("Skip can only take one argument");
-                }
-
-                return match_node(args.at(0), graph_node, pattern_map);
-            }
-        }
-
-        bool Matcher::match_any(const std::shared_ptr<op::Any>& any,
-                                const std::shared_ptr<Node>& graph_node,
-                                PatternMap& pattern_map)
-        {
-            auto predicate = any->get_predicate();
-            if (predicate(graph_node))
-            {
-                return match_arguments(any, graph_node, pattern_map);
-            }
-            else
-            {
-                NGRAPH_DEBUG << "[MATCHER] Aborting at " << *graph_node << " for pattern " << *any;
-                return false;
-            }
-        }
-
-        bool Matcher::match_any_of(const std::shared_ptr<op::AnyOf>& any,
-                                   const std::shared_ptr<Node>& graph_node,
-                                   PatternMap& pattern_map)
-        {
-            auto predicate = any->get_predicate();
-            if (predicate(graph_node))
-            {
-                for (auto arg : graph_node->get_arguments())
-                {
-                    PatternMap copy{pattern_map};
-                    if (match_node(any->get_argument(0), arg, copy))
-                    {
-                        pattern_map.insert(begin(copy), end(copy));
-                        return true;
-                    }
-                }
-
-                NGRAPH_DEBUG << "[MATCHER] Aborting at " << *graph_node << " for pattern " << *any;
-                return false;
-            }
-            else
-            {
-                NGRAPH_DEBUG << "[MATCHER] Aborting at " << *graph_node << " for pattern " << *any;
-                return false;
-            }
         }
 
         bool Matcher::match_node(const std::shared_ptr<Node>& pattern_node,
@@ -176,14 +90,14 @@ namespace ngraph
                 }
             }
 
+            size_t watermark = m_matched_list.size();
             add_node(graph_node);
-            size_t watermark = m_matched_list.size() - 1;
 
             // we can skip multi-output nodes since their shapes will be compared
             // when their individual GOE are matched
             // this also gives a bit more flexibility since we don't have to worry
             // about *all* outputs of a pattern node but only the ones we want to match.
-            if (m_strict_mode && graph_node->get_outputs().size() == 1)
+            if (is_strict_mode() && graph_node->get_outputs().size() == 1)
             {
                 bool shape_match = pattern_node->get_output_partial_shape(0).compatible(
                     graph_node->get_output_partial_shape(0));
@@ -214,31 +128,14 @@ namespace ngraph
             NGRAPH_DEBUG << pad(2 * m_depth) << "[MATCHER] in match_node : "
                          << "pattern = " << *pattern_node << " matched " << *graph_node;
 
-            if (auto label_node = as_type_ptr<op::Label>(pattern_node))
+            if (pattern_node->is_pattern())
             {
-                return abort_match(watermark, match_pattern(label_node, graph_node, pattern_map));
+                return abort_match(watermark,
+                                   std::static_pointer_cast<op::Pattern>(pattern_node)
+                                       ->match_node(*this, graph_node, pattern_map));
             }
 
-            if (auto skip_node =
-                    as_type_ptr<op::Skip>(pattern_node)) // matches PatternSkipOp semantics
-            {
-                return abort_match(watermark, match_skip(skip_node, graph_node, pattern_map));
-            }
-
-            if (auto any_node = as_type_ptr<op::Any>(pattern_node))
-            {
-                return abort_match(watermark, match_any(any_node, graph_node, pattern_map));
-            }
-
-            if (auto any_of_node = as_type_ptr<op::AnyOf>(pattern_node))
-            {
-                return abort_match(watermark, match_any_of(any_of_node, graph_node, pattern_map));
-            }
-
-            auto p_pattern_node = pattern_node.get();
-            auto p_graph_node = graph_node.get();
-
-            if (p_pattern_node->get_type_info() == p_graph_node->get_type_info())
+            if (pattern_node->get_type_info() == graph_node->get_type_info())
             {
                 return abort_match(watermark,
                                    match_arguments(pattern_node, graph_node, pattern_map));
@@ -381,7 +278,7 @@ namespace ngraph
         {
             bool matched = false;
             Matcher m(m_pattern);
-            Matcher::PatternMap previous_matches;
+            PatternMap previous_matches;
             m_matches.clear();
             m_match_root = graph;
 

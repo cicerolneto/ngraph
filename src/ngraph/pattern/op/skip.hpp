@@ -38,6 +38,10 @@ namespace ngraph
                 {
                     set_output_type(0, arg.get_element_type(), arg.get_partial_shape());
                 }
+
+                virtual bool match_node(pattern::Matcher& matcher,
+                                           const std::shared_ptr<Node>& graph_node,
+                                           pattern::PatternMap& pattern_map) override;
             };
         }
     }

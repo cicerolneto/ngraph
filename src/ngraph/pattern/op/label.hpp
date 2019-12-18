@@ -118,6 +118,10 @@ namespace ngraph
                             as_output_vector(wrapped_values))
                 {
                 }
+
+                bool match_node(Matcher& matcher,
+                                   const std::shared_ptr<Node>& graph_node,
+                                   PatternMap& pattern_map) override;
             };
         }
     }

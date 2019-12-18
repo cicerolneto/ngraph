@@ -35,27 +35,13 @@ namespace ngraph
 
     namespace pattern
     {
-        using RPatternMap = std::map<std::shared_ptr<op::Label>, NodeVector>;
-
-        template <typename T>
-        std::function<bool(std::shared_ptr<Node>)> has_class()
-        {
-            auto pred = [](std::shared_ptr<Node> node) -> bool { return is_type<T>(node); };
-
-            return pred;
-        }
-
-        namespace op
-        {
-            class Label;
-        }
-
         /// \brief Matcher matches (compares) two graphs
         ///
         class NGRAPH_API Matcher
         {
         public:
-            using PatternMap = std::map<std::shared_ptr<op::Label>, std::shared_ptr<Node>>;
+            using PatternMap = ngraph::pattern::PatternMap;
+
             // Avoid implicit string construction from nullptr.
             Matcher(const std::shared_ptr<Node>& pattern_node, std::nullptr_t name) = delete;
 
@@ -124,10 +110,12 @@ namespace ngraph
 
             bool is_contained_match(const NodeVector& exclusions = {}, bool ignore_unused = true);
             const NodeVector& get_matched_nodes() { return m_matched_list; }
+            const OutputVector& get_matched_values();
             void reset() {}
             const std::string& get_name() { return m_name; }
             std::shared_ptr<Node> get_pattern() { return m_pattern_node; }
             std::shared_ptr<Node> get_match_root();
+            Output<Node> get_match_value();
             PatternMap get_pattern_map() { return PatternMap{m_pattern_map}; }
             /// \brief Low-level helper to match recurring patterns
             ///
@@ -137,7 +125,6 @@ namespace ngraph
             /// \param patterns a map from labels to matches
             friend op::Label; // TODO: refine to match_class
 
-        protected:
             void add_node(std::shared_ptr<Node> node) { m_matched_list.push_back(node); }
             bool abort_match(size_t watermark, bool matched)
             {
@@ -148,6 +135,7 @@ namespace ngraph
                 return matched;
             }
 
+            bool is_strict_mode() { return m_strict_mode; }
             bool virtual match_node(const std::shared_ptr<Node>& pattern_node,
                                     const std::shared_ptr<Node>& graph_node,
                                     PatternMap& pattern_map);
@@ -166,18 +154,6 @@ namespace ngraph
             bool match_permutation(const NodeVector& pattern_args,
                                    const NodeVector& args,
                                    PatternMap& pattern_map);
-            bool match_pattern(const std::shared_ptr<op::Label>& pattern_node,
-                               const std::shared_ptr<Node>& graph_node,
-                               PatternMap& pattern_map);
-            bool match_skip(const std::shared_ptr<op::Skip>& pattern_node,
-                            const std::shared_ptr<Node>& graph_node,
-                            PatternMap& pattern_map);
-            bool match_any(const std::shared_ptr<op::Any>& pattern_node,
-                           const std::shared_ptr<Node>& graph_node,
-                           PatternMap& pattern_map);
-            bool match_any_of(const std::shared_ptr<op::AnyOf>& pattern_node,
-                              const std::shared_ptr<Node>& graph_node,
-                              PatternMap& pattern_map);
 
             size_t m_depth;
             std::string m_name;
