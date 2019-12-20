@@ -31,8 +31,13 @@ namespace ngraph
 
         class Matcher;
 
-        using RPatternMap = std::map<std::shared_ptr<op::Label>, NodeVector>;
-        using PatternMap = std::map<std::shared_ptr<op::Label>, std::shared_ptr<Node>>;
+        using RPatternValueMap = std::map<Output<Node>, OutputVector>;
+        using PatternValueMap = std::map<Output<Node>, Output<Node>>;
+
+        using PatternMap = std::map<Output<Node>, std::shared_ptr<Node>>;
+
+        PatternMap as_pattern_map(const PatternValueMap& pattern_value_map);
+        PatternValueMap as_pattern_value_map(const PatternMap& pattern_map);
 
         template <typename T>
         std::function<bool(std::shared_ptr<Node>)> has_class()
@@ -44,20 +49,23 @@ namespace ngraph
 
         namespace op
         {
-            using Predicate = std::function<bool(std::shared_ptr<Node>)>;
+            using NodePredicate = std::function<bool(std::shared_ptr<Node>)>;
+            using ValuePredicate = std::function<bool(const Output<Node>& value)>;
+
+            ValuePredicate as_value_predicate(NodePredicate pred);
 
             class NGRAPH_API Pattern : public Node
             {
             public:
                 /// \brief \p a base class for \sa Skip and \sa Label
                 ///
-                Pattern(const OutputVector& wrapped_values, Predicate pred)
+                Pattern(const OutputVector& wrapped_values, ValuePredicate pred)
                     : Node(wrapped_values)
                     , m_predicate(pred)
                 {
                     if (!m_predicate)
                     {
-                        m_predicate = [](std::shared_ptr<Node>) { return true; };
+                        m_predicate = [](const Output<Node>&) { return true; };
                     }
                 }
 
@@ -67,15 +75,16 @@ namespace ngraph
                     throw ngraph_error("Uncopyable");
                 }
 
-                Predicate get_predicate() const;
+                ValuePredicate get_predicate() const;
 
                 bool is_pattern() const override { return true; }
-                virtual bool match_node(pattern::Matcher& matcher,
-                                           const std::shared_ptr<Node>& graph_node,
-                                           pattern::PatternMap& pattern_map) = 0;
+                virtual bool match_value(pattern::Matcher& matcher,
+                                         const Output<Node>& pattern_value,
+                                         const Output<Node>& graph_value,
+                                         PatternValueMap& pattern_map) = 0;
 
             protected:
-                std::function<bool(std::shared_ptr<Node>)> m_predicate;
+                ValuePredicate m_predicate;
             };
         }
     }

@@ -296,7 +296,7 @@ TEST(pattern, matcher)
 {
     Shape shape{};
     auto a = make_shared<op::Parameter>(element::i32, shape);
-    TestMatcher n(nullptr);
+    TestMatcher n;
     ASSERT_TRUE(n.match(a, a));
     ASSERT_EQ(n.get_matched_nodes(), (NodeVector{a}));
 
@@ -437,7 +437,7 @@ TEST(pattern, matcher)
 
     // strict mode
     {
-        TestMatcher sm(nullptr, "TestMatcher", true);
+        TestMatcher sm(Output<Node>{}, "TestMatcher", true);
         // exact shape and type
         auto scalar_param = make_shared<op::Parameter>(element::i32, Shape{});
         auto label_dynamic_shape =
@@ -462,7 +462,7 @@ TEST(pattern, matcher)
 TEST(pattern, mean)
 {
     // construct mean
-    TestMatcher n(nullptr);
+    TestMatcher n;
 
     auto input = std::make_shared<op::Parameter>(element::f32, Shape{2, 3});
     auto N = op::Constant::create(element::f32, Shape{3}, {2, 2, 2});
@@ -477,7 +477,7 @@ TEST(pattern, mean)
 TEST(pattern, variance)
 {
     // construct variance
-    TestMatcher n(nullptr);
+    TestMatcher n;
     auto N = op::Constant::create(element::f32, Shape{3}, {2, 2, 2});
     auto input = std::make_shared<pattern::op::Label>(element::f32, Shape{2, 3});
     auto input_sq = std::make_shared<op::Multiply>(input, input);
@@ -733,7 +733,7 @@ TEST(pattern, is_contained_match)
     Shape shape{};
     auto a = make_shared<op::Parameter>(element::i32, shape);
     auto absn = make_shared<op::Abs>(a);
-    TestMatcher n(nullptr);
+    TestMatcher n;
 
     auto label_a = std::make_shared<pattern::op::Label>(a);
     auto label_abs = make_shared<op::Abs>(a);

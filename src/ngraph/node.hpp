@@ -721,6 +721,12 @@ namespace ngraph
         /// A null output
         Output() = default;
 
+        void reset()
+        {
+            m_node.reset();
+            m_index = 0;
+        }
+
         /// This output position for a different node
         Output<Node> for_node(const std::shared_ptr<Node>& node) { return Output(node, m_index); }
         /// \return A pointer to the node referred to by this output handle.
@@ -826,6 +832,12 @@ namespace ngraph
 
         /// A null output
         Output() = default;
+
+        void reset()
+        {
+            m_node.reset();
+            m_index = 0;
+        }
 
         /// This output position for a different node
         Output<const Node> for_node(const std::shared_ptr<const Node>& node)

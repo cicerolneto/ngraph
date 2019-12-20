@@ -20,16 +20,24 @@
 using namespace std;
 using namespace ngraph;
 
-bool pattern::op::Skip::match_node(Matcher& matcher,
-                                      const std::shared_ptr<Node>& graph_node,
-                                      PatternMap& pattern_map)
+constexpr NodeTypeInfo pattern::op::Skip::type_info;
+
+const NodeTypeInfo& pattern::op::Skip::get_type_info() const
 {
-    if (m_predicate(graph_node))
+    return type_info;
+}
+
+bool pattern::op::Skip::match_value(Matcher& matcher,
+                                    const Output<Node>& pattern_value,
+                                    const Output<Node>& graph_value,
+                                    PatternValueMap& pattern_map)
+{
+    if (m_predicate(graph_value))
     {
-        return matcher.match_arguments(shared_from_this(), graph_node, pattern_map);
+        return matcher.match_arguments(pattern_value, graph_value, pattern_map);
     }
     else
     {
-        return matcher.match_node(get_argument(0), graph_node, pattern_map);
+        return matcher.match_value(input_value(0), graph_value, pattern_map);
     }
 }

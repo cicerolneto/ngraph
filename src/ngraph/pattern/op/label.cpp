@@ -20,20 +20,28 @@
 using namespace std;
 using namespace ngraph;
 
-bool pattern::op::Label::match_node(Matcher& matcher,
-                                       const std::shared_ptr<Node>& graph_node,
-                                       PatternMap& pattern_map)
+constexpr NodeTypeInfo pattern::op::Label::type_info;
+
+const NodeTypeInfo& pattern::op::Label::get_type_info() const
 {
-    auto label = as_type_ptr<Label>(shared_from_this());
-    if (pattern_map.count(label))
+    return type_info;
+}
+
+bool pattern::op::Label::match_value(Matcher& matcher,
+                                     const Output<Node>& pattern_value,
+                                     const Output<Node>& graph_value,
+                                     PatternValueMap& pattern_map)
+{
+    auto label = as_type_ptr<Label>(pattern_value.get_node_shared_ptr());
+    if (pattern_map.count(pattern_value))
     {
-        return pattern_map[label] == graph_node;
+        return pattern_map[pattern_value] == graph_value;
     }
-    else if (m_predicate(graph_node))
+    else if (m_predicate(graph_value))
     {
-        if (get_input_size() == 0 || matcher.match_node(get_argument(0), graph_node, pattern_map))
+        if (get_input_size() == 0 || matcher.match_value(input_value(0), graph_value, pattern_map))
         {
-            pattern_map[label] = graph_node;
+            pattern_map[pattern_value] = graph_value;
             return true;
         }
     }

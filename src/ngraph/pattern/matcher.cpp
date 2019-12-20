@@ -29,20 +29,66 @@ namespace ngraph
     {
         namespace op
         {
-            // The symbols are requiered to be in cpp file to workaround RTTI issue on Android LLVM
-            const NodeTypeInfo& Any::get_type_info() const { return type_info; }
-            const NodeTypeInfo& AnyOf::get_type_info() const { return type_info; }
-            const NodeTypeInfo& Label::get_type_info() const { return type_info; }
-            const NodeTypeInfo& Skip::get_type_info() const { return type_info; }
-            Predicate Pattern::get_predicate() const { return m_predicate; }
+            // The symbols are required to be in cpp file to workaround RTTI issue on Android LLVM
+            ValuePredicate Pattern::get_predicate() const { return m_predicate; }
+            ValuePredicate as_value_predicate(NodePredicate pred)
+            {
+                if (pred == nullptr)
+                {
+                    return [](const Output<Node>&) { return true; };
+                }
+                else
+                {
+                    return [pred](const Output<Node>& value) {
+                        return pred(value.as_single_output_node(false));
+                    };
+                }
+            }
         }
 
-        constexpr NodeTypeInfo op::AnyOf::type_info;
-        constexpr NodeTypeInfo op::Any::type_info;
-        constexpr NodeTypeInfo op::Label::type_info;
-        constexpr NodeTypeInfo op::Skip::type_info;
+        PatternMap as_pattern_map(const PatternValueMap& pattern_value_map)
+        {
+            PatternMap result;
+            for (auto& kv : pattern_value_map)
+            {
+                result[kv.first] = kv.second.as_single_output_node(false);
+            }
+            return result;
+        }
 
-        std::shared_ptr<Node> Matcher::get_match_root() { return m_match_root; }
+        PatternValueMap as_pattern_value_map(const PatternMap& pattern_map)
+        {
+            PatternValueMap result;
+            for (auto& kv : pattern_map)
+            {
+                result[kv.first] = kv.second;
+            }
+            return result;
+        }
+
+        PatternMap Matcher::get_pattern_map() const { return as_pattern_map(m_pattern_map); }
+        size_t Matcher::add_node(Output<Node> node)
+        {
+            size_t result = m_matched_list.size();
+            m_matched_list.push_back(node.get_node_shared_ptr());
+            return result;
+        }
+
+        bool Matcher::abort_match(size_t watermark, bool matched)
+        {
+            if (!matched)
+            {
+                m_matched_list.erase(m_matched_list.begin() + watermark, m_matched_list.end());
+            }
+            return matched;
+        }
+
+        std::shared_ptr<Node> Matcher::get_match_root()
+        {
+            return m_match_root.get_node_shared_ptr();
+        }
+
+        Output<Node> Matcher::get_match_value() { return m_match_root; }
         bool Matcher::is_contained_match(const NodeVector& exclusions, bool ignore_unused)
         {
             if (exclusions.empty())
@@ -51,9 +97,9 @@ namespace ngraph
                 for (auto entry : m_pattern_map)
                 {
                     // leaf label
-                    if (entry.first->get_input_size() == 0)
+                    if (entry.first.get_node_shared_ptr()->get_input_size() == 0)
                     {
-                        label_exclusions.push_back(entry.second);
+                        label_exclusions.push_back(entry.second.get_node_shared_ptr());
                     }
                 }
                 return ngraph::get_subgraph_outputs(
@@ -64,51 +110,31 @@ namespace ngraph
             return ngraph::get_subgraph_outputs(get_matched_nodes(), exclusions).size() < 2;
         }
 
-        bool Matcher::match_node(const std::shared_ptr<Node>& pattern_node,
-                                 const std::shared_ptr<Node>& graph_node,
-                                 PatternMap& pattern_map)
+        bool Matcher::match_value(const ngraph::Output<Node>& pattern_value,
+                                  const ngraph::Output<Node>& graph_value,
+                                  PatternValueMap& pattern_map)
         {
-            if (!pattern_node || !graph_node)
+            ngraph::Output<Node> real_pattern_value =
+                m_follow_goe &&
+                        is_type<ngraph::op::GetOutputElement>(pattern_value.get_node_shared_ptr())
+                    ? pattern_value.get_node_shared_ptr()->input_value(0)
+                    : pattern_value;
+            ngraph::Output<Node> real_graph_value =
+                m_follow_goe &&
+                        is_type<ngraph::op::GetOutputElement>(graph_value.get_node_shared_ptr())
+                    ? graph_value.get_node_shared_ptr()->input_value(0)
+                    : graph_value;
+
+            if (real_pattern_value.get_index() != real_graph_value.get_index() ||
+                (is_strict_mode() && (!real_pattern_value.get_element_type().compatible(
+                                          real_graph_value.get_element_type()) ||
+                                      !real_pattern_value.get_partial_shape().compatible(
+                                          real_graph_value.get_partial_shape()))))
             {
-                throw ngraph_error("pattern_node or graph_node shouldn't be nullptrs!");
+                return false;
             }
-
-            if (auto goe = as_type_ptr<ngraph::op::GetOutputElement>(pattern_node))
-            {
-                if (!is_type<ngraph::op::GetOutputElement>(graph_node))
-                {
-                    auto goe_value = goe->input_value(0);
-                    if (goe_value.get_index() < graph_node->get_output_size())
-                    {
-                        auto graph_goe =
-                            graph_node->output(goe_value.get_index()).as_single_output_node();
-                        if (graph_goe != graph_node)
-                        {
-                            return match_node(pattern_node, graph_goe, pattern_map);
-                        }
-                    }
-                }
-            }
-
-            size_t watermark = m_matched_list.size();
-            add_node(graph_node);
-
-            // we can skip multi-output nodes since their shapes will be compared
-            // when their individual GOE are matched
-            // this also gives a bit more flexibility since we don't have to worry
-            // about *all* outputs of a pattern node but only the ones we want to match.
-            if (is_strict_mode() && graph_node->get_outputs().size() == 1)
-            {
-                bool shape_match = pattern_node->get_output_partial_shape(0).compatible(
-                    graph_node->get_output_partial_shape(0));
-                bool et_match =
-                    pattern_node->get_element_type().compatible(graph_node->get_element_type());
-
-                if (!shape_match || !et_match)
-                {
-                    return abort_match(watermark, false);
-                }
-            }
+            std::shared_ptr<Node> pattern_node = real_pattern_value.get_node_shared_ptr();
+            std::shared_ptr<Node> graph_node = real_graph_value.get_node_shared_ptr();
 
             // This env var allows one to specify node name patterns to abort pattern matching
             // at particular nodes. The upshot is that one can quickly zero in on an offending
@@ -121,24 +147,24 @@ namespace ngraph
                 {
                     NGRAPH_DEBUG << "[MATCHER] Aborting at " << *graph_node
                                  << " due to NGRAPH_MATCHER_SKIP set to " << node_skip_cregex;
-                    return abort_match(watermark, false);
+                    return false;
                 }
             }
 
-            NGRAPH_DEBUG << pad(2 * m_depth) << "[MATCHER] in match_node : "
-                         << "pattern = " << *pattern_node << " matched " << *graph_node;
+            auto watermark = add_node(real_graph_value);
 
             if (pattern_node->is_pattern())
             {
-                return abort_match(watermark,
-                                   std::static_pointer_cast<op::Pattern>(pattern_node)
-                                       ->match_node(*this, graph_node, pattern_map));
+                return abort_match(
+                    watermark,
+                    std::static_pointer_cast<op::Pattern>(pattern_node)
+                        ->match_value(*this, real_pattern_value, real_graph_value, pattern_map));
             }
 
             if (pattern_node->get_type_info() == graph_node->get_type_info())
             {
-                return abort_match(watermark,
-                                   match_arguments(pattern_node, graph_node, pattern_map));
+                return abort_match(
+                    watermark, match_arguments(real_pattern_value, real_graph_value, pattern_map));
             }
 
             NGRAPH_DEBUG << "[MATCHER] Aborting at " << *graph_node << " for pattern "
@@ -146,14 +172,14 @@ namespace ngraph
             return abort_match(watermark, false);
         }
 
-        bool Matcher::match_permutation(const NodeVector& pattern_args,
-                                        const NodeVector& args,
-                                        PatternMap& pattern_map)
+        bool Matcher::match_permutation(const OutputVector& pattern_args,
+                                        const OutputVector& args,
+                                        PatternValueMap& pattern_map)
         {
             m_depth++;
             for (size_t i = 0; i < args.size(); i++)
             {
-                if (!match_node(pattern_args.at(i), args.at(i), pattern_map))
+                if (!match_value(pattern_args.at(i), args.at(i), pattern_map))
                 {
                     m_depth--;
                     return false;
@@ -163,16 +189,17 @@ namespace ngraph
             return true;
         }
 
-        bool Matcher::match_arguments(const std::shared_ptr<ngraph::Node>& pattern_node,
-                                      const std::shared_ptr<ngraph::Node>& graph_node,
-                                      PatternMap& pattern_map)
+        bool Matcher::match_arguments(const Output<Node>& pattern_value,
+                                      const Output<Node>& graph_value,
+                                      PatternValueMap& pattern_map)
         {
-            NGRAPH_DEBUG << pad(2 * m_depth) << "[MATCHER] in match_arguments : "
-                         << "pattern = " << *pattern_node << " "
-                         << "matched " << *graph_node;
+            auto pattern_node = pattern_value.get_node_shared_ptr();
+            auto graph_node = graph_value.get_node_shared_ptr();
+            NGRAPH_DEBUG << "[MATCHER] Match arguments at " << *graph_node << " for pattern "
+                         << *pattern_node;
 
-            auto args = graph_node->get_arguments();
-            auto pattern_args = pattern_node->get_arguments();
+            auto args = graph_node->input_values();
+            auto pattern_args = pattern_node->input_values();
 
             if (args.size() != pattern_args.size())
             {
@@ -187,32 +214,25 @@ namespace ngraph
                 // heap's algo should be faster
                 std::sort(begin(pattern_args),
                           end(pattern_args),
-                          [](const std::shared_ptr<ngraph::Node>& n1,
-                             const std::shared_ptr<ngraph::Node>& n2) {
-                              return n1->get_instance_id() < n2->get_instance_id();
-
-                          });
+                          [](const ngraph::Output<ngraph::Node>& n1,
+                             const ngraph::Output<ngraph::Node>& n2) { return n1 < n2; });
                 do
                 {
-                    NGRAPH_DEBUG << pad(2 * m_depth) << "Running a permutation for graph_node "
-                                 << graph_node->get_name();
-                    PatternMap copy{pattern_map};
+                    PatternValueMap copy{pattern_map};
                     if (match_permutation(pattern_args, args, copy))
                     {
                         pattern_map.insert(begin(copy), end(copy));
                         return true;
                     }
-                } while (std::next_permutation(begin(pattern_args),
-                                               end(pattern_args),
-                                               [](const std::shared_ptr<ngraph::Node>& n1,
-                                                  const std::shared_ptr<ngraph::Node>& n2) {
-                                                   return n1->get_instance_id() <
-                                                          n2->get_instance_id();
-                                               }));
+                } while (std::next_permutation(
+                    begin(pattern_args),
+                    end(pattern_args),
+                    [](const ngraph::Output<ngraph::Node>& n1,
+                       const ngraph::Output<ngraph::Node>& n2) { return n1 < n2; }));
             }
             else
             {
-                PatternMap copy{pattern_map};
+                PatternValueMap copy{pattern_map};
                 if (match_permutation(pattern_args, args, copy))
                 {
                     pattern_map.insert(begin(copy), end(copy));
@@ -225,31 +245,15 @@ namespace ngraph
             return false;
         }
 
-        bool Matcher::match(const std::shared_ptr<Node>& graph_node)
+        bool Matcher::match(const Output<Node>& graph_value)
         {
             // clear our state
-            m_match_root.reset();
-            m_pattern_map.clear();
             m_matched_list.clear();
-
-            if (!m_pattern_node || !graph_node)
-            {
-                throw ngraph_error("m_pattern_node or graph_node are not set");
-            }
-
-            NGRAPH_DEBUG << "[MATCHER] Starting match pattern = " << *m_pattern_node
-                         << " , graph_node = " << *graph_node;
-
-            bool is_match = match_node(m_pattern_node, graph_node, m_pattern_map);
-            if (is_match)
-            {
-                m_match_root = graph_node;
-            }
-            return is_match;
+            return match(graph_value, PatternValueMap{});
         }
 
-        bool Matcher::match(const std::shared_ptr<Node>& graph_node,
-                            const PatternMap& previous_matches)
+        bool Matcher::match(const Output<Node>& graph_value,
+                            const PatternValueMap& previous_matches)
         {
             // clear our state
             m_match_root.reset();
@@ -258,41 +262,58 @@ namespace ngraph
             // insert previous matches
             m_pattern_map.insert(previous_matches.cbegin(), previous_matches.cend());
 
-            if (!m_pattern_node || !graph_node)
-            {
-                throw ngraph_error("m_pattern_node or graph_node are not set");
-            }
-
-            NGRAPH_DEBUG << "[MATCHER] Starting match pattern = " << *m_pattern_node
-                         << " , graph_node = " << *graph_node;
-
-            bool is_match = match_node(m_pattern_node, graph_node, m_pattern_map);
+            bool is_match = match_value(m_pattern_node, graph_value, m_pattern_map);
             if (is_match)
             {
-                m_match_root = graph_node;
+                m_match_root = graph_value;
             }
             return is_match;
         }
 
-        bool RecurrentMatcher::match(std::shared_ptr<Node> graph)
+        bool Matcher::match(const Output<Node>& graph_value, const PatternMap& previous_matches)
+        {
+            return match(graph_value, as_pattern_value_map(previous_matches));
+        }
+
+        namespace
+        {
+            std::set<Output<Node>>
+                as_output_set(const std::set<std::shared_ptr<op::Label>>& label_set)
+            {
+                std::set<Output<Node>> result;
+                for (auto label : label_set)
+                {
+                    result.insert(label);
+                }
+                return result;
+            }
+        }
+
+        RecurrentMatcher::RecurrentMatcher(
+            const Output<Node>& pattern,
+            const Output<Node>& rpattern,
+            const std::set<std::shared_ptr<op::Label>>& correlated_patterns)
+            : RecurrentMatcher(pattern, rpattern, as_output_set(correlated_patterns))
+        {
+        }
+
+        bool RecurrentMatcher::match(Output<Node> graph)
         {
             bool matched = false;
             Matcher m(m_pattern);
-            PatternMap previous_matches;
+            PatternValueMap previous_matches;
             m_matches.clear();
             m_match_root = graph;
 
-            NGRAPH_DEBUG << "matching graph to " << *graph << std::endl;
             // try to match one cell (i.e. pattern)
             while (m.match(graph, previous_matches))
             {
                 matched = true;
                 // move to the next cell
-                graph = m.get_pattern_map()[m_recurrent_pattern];
-                NGRAPH_DEBUG << "setting graph to " << *graph << std::endl;
+                graph = m.get_pattern_value_map()[m_recurrent_pattern];
 
                 // copy bound nodes for the current pattern graph into a global matches map
-                for (auto cur_match : m.get_pattern_map())
+                for (auto cur_match : m.get_pattern_value_map())
                 {
                     m_matches[cur_match.first].push_back(cur_match.second);
                 }
@@ -303,28 +324,26 @@ namespace ngraph
                 // unbounded by default
                 for (auto cor_pat : m_correlated_patterns)
                 {
-                    if (m.get_pattern_map().count(cor_pat) != 0)
+                    if (m.get_pattern_value_map().count(cor_pat) != 0)
                     {
                         // assert that bound nodes from the previous and current matches are the
                         // same
                         if (previous_matches.count(cor_pat) != 0)
                         {
-                            if (previous_matches[cor_pat] != m.get_pattern_map()[cor_pat])
+                            if (previous_matches[cor_pat] != m.get_pattern_value_map()[cor_pat])
                             {
                                 throw ngraph_error(
                                     "previous matches and current matches aren't consistent!");
                             }
                         }
 
-                        previous_matches[cor_pat] = m.get_pattern_map()[cor_pat];
+                        previous_matches[cor_pat] = m.get_pattern_value_map()[cor_pat];
                     }
                 }
             }
 
             if (!matched)
             {
-                NGRAPH_DEBUG << "[RecurrentMatcher] Aborting at " << *graph << " for pattern "
-                             << *m_pattern;
                 m_match_root.reset();
             }
 

@@ -20,16 +20,24 @@
 using namespace std;
 using namespace ngraph;
 
-bool pattern::op::AnyOf::match_node(Matcher& matcher,
-                                       const std::shared_ptr<Node>& graph_node,
-                                       PatternMap& pattern_map)
+constexpr NodeTypeInfo pattern::op::AnyOf::type_info;
+
+const NodeTypeInfo& pattern::op::AnyOf::get_type_info() const
 {
-    if (m_predicate(graph_node))
+    return type_info;
+}
+
+bool pattern::op::AnyOf::match_value(Matcher& matcher,
+                                     const Output<Node>& pattern_value,
+                                     const Output<Node>& graph_value,
+                                     PatternValueMap& pattern_map)
+{
+    if (m_predicate(graph_value))
     {
-        for (auto arg : graph_node->get_arguments())
+        for (auto arg : graph_value.get_node_shared_ptr()->input_values())
         {
-            PatternMap copy{pattern_map};
-            if (matcher.match_node(get_argument(0), arg, copy))
+            PatternValueMap copy{pattern_map};
+            if (matcher.match_value(input_value(0), arg, copy))
             {
                 pattern_map.insert(begin(copy), end(copy));
                 return true;
