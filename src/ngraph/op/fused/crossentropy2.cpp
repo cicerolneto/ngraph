@@ -193,7 +193,7 @@ NodeVector op::CrossEntropy2::decompose_op() const
     auto sum_reshape = reshape(node_sum, mask->get_shape());
     auto matchx = mask * sum_reshape;
 
-    return {matchx/*, input.get_node_shared_ptr(), xe}*/};
+    return {matchx, xe /*, input.get_node_shared_ptr(), xe}*/};
 }
 
 shared_ptr<Node> op::CrossEntropy2::copy_with_new_args(const NodeVector& new_args) const
