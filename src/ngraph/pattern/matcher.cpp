@@ -14,10 +14,10 @@
 // limitations under the License.
 //*****************************************************************************
 
-#include "matcher.hpp"
 #include <algorithm>
 #include <regex>
 
+#include "matcher.hpp"
 #include "ngraph/graph_util.hpp"
 #include "ngraph/log.hpp"
 #include "ngraph/op/get_output_element.hpp"
@@ -27,43 +27,39 @@ namespace ngraph
 {
     namespace pattern
     {
-        namespace op
+        namespace
         {
-            // The symbols are required to be in cpp file to workaround RTTI issue on Android LLVM
-            ValuePredicate Pattern::get_predicate() const { return m_predicate; }
-            ValuePredicate as_value_predicate(NodePredicate pred)
+            class MatchStateImp : public MatchState
             {
-                if (pred == nullptr)
+            public:
+                MatchStateImp(Matcher& matcher)
+                    : m_matcher(matcher)
                 {
-                    return [](const Output<Node>&) { return true; };
                 }
-                else
+
+                PatternValueMap& get_pattern_map() override { return m_pattern_value_map; }
+                void match_value(const Output<Node>& pattern_value,
+                                 const Output<Node>& graph_value) override
                 {
-                    return [pred](const Output<Node>& value) {
-                        return pred(value.as_single_output_node(false));
-                    };
+                    m_matcher.match_value(pattern_value, graph_value, m_pattern_value_map);
                 }
-            }
-        }
-
-        PatternMap as_pattern_map(const PatternValueMap& pattern_value_map)
-        {
-            PatternMap result;
-            for (auto& kv : pattern_value_map)
-            {
-                result[kv.first] = kv.second.as_single_output_node(false);
-            }
-            return result;
-        }
-
-        PatternValueMap as_pattern_value_map(const PatternMap& pattern_map)
-        {
-            PatternValueMap result;
-            for (auto& kv : pattern_map)
-            {
-                result[kv.first] = kv.second;
-            }
-            return result;
+                void match_inputs(const Output<Node>& pattern_value,
+                                  const Output<Node>& graph_value) override
+                {
+                    m_matcher.match_arguments(pattern_value, graph_value, m_pattern_value_map);
+                }
+                void start_match() override { m_saved_maps.push(m_pattern_value_map); }
+                void abort_match() override
+                {
+                    m_pattern_value_map = m_saved_maps.top();
+                    m_saved_maps.pop();
+                }
+                void finish_match() override { m_saved_maps.pop(); }
+            protected:
+                Matcher& m_matcher;
+                PatternValueMap m_pattern_value_map;
+                std::stack<PatternValueMap> m_saved_maps;
+            };
         }
 
         PatternMap Matcher::get_pattern_map() const { return as_pattern_map(m_pattern_map); }
@@ -300,7 +296,9 @@ namespace ngraph
         bool RecurrentMatcher::match(Output<Node> graph)
         {
             bool matched = false;
-            Matcher m(m_pattern);
+            Matcher m_initial(m_initial_pattern);
+            Matcher m_repeat(m_pattern);
+            Matcher& m = m_initial;
             PatternValueMap previous_matches;
             m_matches.clear();
             m_match_root = graph;
@@ -340,6 +338,7 @@ namespace ngraph
                         previous_matches[cor_pat] = m.get_pattern_value_map()[cor_pat];
                     }
                 }
+                m = m_repeat;
             }
 
             if (!matched)

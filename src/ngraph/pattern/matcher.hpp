@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <functional>
 #include <memory.h>
 
@@ -35,6 +36,17 @@ namespace ngraph
 
     namespace pattern
     {
+        class NGRAPH_API MatchState
+        {
+        public:
+            virtual PatternValueMap& get_pattern_map() = 0;
+            virtual void match_value(const Output<Node>& pattern, const Output<Node>& value) = 0;
+            virtual void match_inputs(const Output<Node>& pattern, const Output<Node>& value) = 0;
+            virtual void start_match() = 0;
+            virtual void abort_match() = 0;
+            virtual void finish_match() = 0;
+        };
+
         /// \brief Matcher matches (compares) two graphs
         ///
         class NGRAPH_API Matcher
@@ -161,6 +173,26 @@ namespace ngraph
             /// \brief Constructs a RecurrentMatcher object. Reccurent Matchers are used to match
             ///        repeating patterns (e.g. RNN, LSTM, GRU cells)
             ///
+            /// \param initial_pattern is a pattern sub graph describing the initial cell
+            /// \param pattern is a pattern sub graph describing an individual cell
+            /// \param rpattern is a (recurring) label to denote which node the next match should
+            ///                 start at
+            /// \param correlated_patterns is a set of labels whose bound nodes must remain the same
+            ///                            across all cells
+            RecurrentMatcher(const Output<Node>& initial_pattern,
+                             const Output<Node>& pattern,
+                             const Output<Node>& rpattern,
+                             const std::set<Output<Node>>& correlated_patterns)
+                : m_initial_pattern(initial_pattern)
+                , m_pattern(pattern)
+                , m_recurrent_pattern(rpattern)
+                , m_correlated_patterns(correlated_patterns)
+            {
+            }
+
+            /// \brief Constructs a RecurrentMatcher object. Reccurent Matchers are used to match
+            ///        repeating patterns (e.g. RNN, LSTM, GRU cells)
+            ///
             /// \param pattern is a pattern sub graph describing an individual cell
             /// \param rpattern is a (recurring) label to denote which node the next match should
             ///                 start at
@@ -169,9 +201,7 @@ namespace ngraph
             RecurrentMatcher(const Output<Node>& pattern,
                              const Output<Node>& rpattern,
                              const std::set<Output<Node>>& correlated_patterns)
-                : m_pattern(pattern)
-                , m_recurrent_pattern(rpattern)
-                , m_correlated_patterns(correlated_patterns)
+                : RecurrentMatcher(pattern, pattern, rpattern, correlated_patterns)
             {
             }
 
@@ -208,6 +238,7 @@ namespace ngraph
             std::shared_ptr<Node> get_match_root() { return m_match_root.get_node_shared_ptr(); }
             Output<Node> get_match_value() { return m_match_root; }
         private:
+            Output<Node> m_initial_pattern;
             Output<Node> m_pattern;
             Output<Node> m_recurrent_pattern;
             const std::set<Output<Node>> m_correlated_patterns;

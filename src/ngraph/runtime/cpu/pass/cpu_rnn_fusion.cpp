@@ -935,12 +935,13 @@ void ngraph::runtime::cpu::pass::RNNFusion::construct_rnn_lstm_fprop()
     };
 
     auto m = std::make_shared<pattern::RecurrentMatcher>(
+        std::make_shared<ngraph::op::GetOutputElement>(lstm, 1),
         lstm_goe,
         lstm_ct,
-        std::set<std::shared_ptr<pattern::op::Label>>{lstm_weights_layer_shared,
-                                                      lstm_weights_iter_shared,
-                                                      lstm_bias_layer_shared,
-                                                      lstm_bias_iter_shared});
+        std::set<Output<Node>>{lstm_weights_layer_shared,
+                               lstm_weights_iter_shared,
+                               lstm_bias_layer_shared,
+                               lstm_bias_iter_shared});
 #endif
     this->add_matcher(m, callback);
 }
@@ -1215,9 +1216,8 @@ void ngraph::runtime::cpu::pass::MultiLayerRNNFusion::construct_multi_layer_rnn_
         return true;
     };
 
-    std::set<std::shared_ptr<pattern::op::Label>> empty_correlated_matches;
     auto m = std::make_shared<pattern::RecurrentMatcher>(
-        rnn_goe0_label, rnn_src_layer, empty_correlated_matches);
+        rnn_goe0_label, rnn_src_layer, std::set<Output<Node>>{});
     this->add_matcher(m, callback);
 }
 
@@ -1255,10 +1255,8 @@ void ngraph::runtime::cpu::pass::BiDirectionalRnn::construct_bidirectional_rnn()
     // Define a call back that needs to called once the DFG matches the pattern
     auto callback = [rnn_left_to_right, rnn_right_to_left](pattern::Matcher& m) {
         auto pattern_map = m.get_pattern_map();
-        auto rnn_ltor_node =
-            std::static_pointer_cast<ngraph::op::Rnn>(pattern_map[rnn_left_to_right]);
-        auto rnn_rtol_node =
-            std::static_pointer_cast<ngraph::op::Rnn>(pattern_map[rnn_right_to_left]);
+        auto rnn_ltor_node = as_type_ptr<ngraph::op::Rnn>(pattern_map[rnn_left_to_right]);
+        auto rnn_rtol_node = as_type_ptr<ngraph::op::Rnn>(pattern_map[rnn_right_to_left]);
 
         if (rnn_ltor_node->get_src_sequence_length() != rnn_rtol_node->get_src_sequence_length())
         {
