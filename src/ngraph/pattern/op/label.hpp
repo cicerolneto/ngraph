@@ -52,8 +52,6 @@ namespace ngraph
                       const OutputVector& wrapped_values)
                     : Pattern(wrapped_values, pred)
                 {
-                    NODE_VALIDATION_CHECK(
-                        this, wrapped_values.size() <= 1, "Label can have at most one input");
                     set_output_type(0, type, s);
                 }
 

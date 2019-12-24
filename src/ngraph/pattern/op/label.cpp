@@ -39,10 +39,20 @@ bool pattern::op::Label::match_value(Matcher& matcher,
     }
     else if (m_predicate(graph_value))
     {
-        if (get_input_size() == 0 || matcher.match_value(input_value(0), graph_value, pattern_map))
+        if (0 == get_input_size())
         {
             pattern_map[pattern_value] = graph_value;
             return true;
+        }
+        for (auto input_value : input_values())
+        {
+            PatternValueMap copy(pattern_map);
+            if (matcher.match_value(input_value, graph_value, copy))
+            {
+                pattern_map = copy;
+                pattern_map[pattern_value] = graph_value;
+                return true;
+            }
         }
     }
 

@@ -564,6 +564,8 @@ set (SRC
     pattern/op/any_of.hpp
     pattern/op/label.cpp
     pattern/op/label.hpp
+    pattern/op/or.cpp
+    pattern/op/or.hpp
     pattern/op/pattern.cpp
     pattern/op/pattern.hpp
     pattern/op/skip.cpp

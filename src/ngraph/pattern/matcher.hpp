@@ -36,17 +36,6 @@ namespace ngraph
 
     namespace pattern
     {
-        class NGRAPH_API MatchState
-        {
-        public:
-            virtual PatternValueMap& get_pattern_map() = 0;
-            virtual void match_value(const Output<Node>& pattern, const Output<Node>& value) = 0;
-            virtual void match_inputs(const Output<Node>& pattern, const Output<Node>& value) = 0;
-            virtual void start_match() = 0;
-            virtual void abort_match() = 0;
-            virtual void finish_match() = 0;
-        };
-
         /// \brief Matcher matches (compares) two graphs
         ///
         class NGRAPH_API Matcher

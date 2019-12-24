@@ -48,6 +48,7 @@
 #include "ngraph/op/tanh.hpp"
 #include "ngraph/pattern/matcher.hpp"
 #include "ngraph/pattern/op/label.hpp"
+#include "ngraph/pattern/op/or.hpp"
 #include "ngraph/pattern/op/skip.hpp"
 #include "ngraph/runtime/cpu/mkldnn_utils.hpp"
 #include "ngraph/runtime/cpu/op/lstm.hpp"
@@ -540,8 +541,12 @@ void ngraph::runtime::cpu::pass::RNNFusion::construct_rnn_lstm_fprop()
                                                    ref_rnn_type);
     auto lstm_goe = std::make_shared<ngraph::op::GetOutputElement>(lstm, 1);
     // We cannot attach labels to multi-output nodes, so we attach a label to the goe instead
-    auto lstm_goe_label =
-        std::make_shared<pattern::op::Label>(lstm_goe, nullptr, NodeVector{lstm_goe});
+    auto lstm_goe_label = std::make_shared<pattern::op::Label>(
+        lstm_goe,
+        nullptr,
+        OutputVector{std::make_shared<pattern::op::Or>(
+            OutputVector{lstm_goe, std::make_shared<ngraph::op::GetOutputElement>(lstm, 0)})});
+    // NodeVector{lstm_goe, std::make_shared<ngraph::op::GetOutputElement>(lstm, 0)});
     auto lstm_goe_slice =
         std::make_shared<ngraph::op::Slice>(lstm_goe_label, Coordinate{10, 0}, Coordinate{20, 100});
 
@@ -731,10 +736,10 @@ void ngraph::runtime::cpu::pass::RNNFusion::construct_rnn_lstm_fprop()
     auto m = std::make_shared<pattern::RecurrentMatcher>(
         lstm_goe_slice,
         lstm_ct,
-        std::set<std::shared_ptr<pattern::op::Label>>{lstm_weights_layer_shared,
-                                                      lstm_weights_iter_shared,
-                                                      lstm_bias_layer_shared,
-                                                      lstm_bias_iter_shared});
+        std::set<Output<Node>>{lstm_weights_layer_shared,
+                               lstm_weights_iter_shared,
+                               lstm_bias_layer_shared,
+                               lstm_bias_iter_shared});
 #else
     auto lstm = std::make_shared<ngraph::op::Lstm>(lstm_src_layer,
                                                    lstm_ht,

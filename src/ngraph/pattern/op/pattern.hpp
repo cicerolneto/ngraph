@@ -30,6 +30,7 @@ namespace ngraph
         }
 
         class Matcher;
+        class MatchState;
 
         using RPatternValueMap = std::map<Output<Node>, OutputVector>;
         using PatternValueMap = std::map<Output<Node>, Output<Node>>;

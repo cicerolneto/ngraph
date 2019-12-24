@@ -38,6 +38,7 @@
 #include "ngraph/pass/manager.hpp"
 #include "ngraph/pattern/matcher.hpp"
 #include "ngraph/pattern/op/label.hpp"
+#include "ngraph/pattern/op/or.hpp"
 #include "ngraph/pattern/op/skip.hpp"
 #include "ngraph/serializer.hpp"
 #include "util/matcher.hpp"
@@ -434,6 +435,10 @@ TEST(pattern, matcher)
     ASSERT_TRUE(n.match(add_label1, add + a));
     ASSERT_EQ(n.get_pattern_map()[label1], a);
     ASSERT_EQ(n.get_pattern_map()[label2], add);
+
+    // Or
+    ASSERT_TRUE(n.match(std::make_shared<pattern::op::Or>(OutputVector{a + b, a - b}), a + b));
+    ASSERT_TRUE(n.match(std::make_shared<pattern::op::Or>(OutputVector{a + b, a - b}), a - b));
 
     // strict mode
     {

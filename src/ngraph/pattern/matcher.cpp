@@ -27,41 +27,6 @@ namespace ngraph
 {
     namespace pattern
     {
-        namespace
-        {
-            class MatchStateImp : public MatchState
-            {
-            public:
-                MatchStateImp(Matcher& matcher)
-                    : m_matcher(matcher)
-                {
-                }
-
-                PatternValueMap& get_pattern_map() override { return m_pattern_value_map; }
-                void match_value(const Output<Node>& pattern_value,
-                                 const Output<Node>& graph_value) override
-                {
-                    m_matcher.match_value(pattern_value, graph_value, m_pattern_value_map);
-                }
-                void match_inputs(const Output<Node>& pattern_value,
-                                  const Output<Node>& graph_value) override
-                {
-                    m_matcher.match_arguments(pattern_value, graph_value, m_pattern_value_map);
-                }
-                void start_match() override { m_saved_maps.push(m_pattern_value_map); }
-                void abort_match() override
-                {
-                    m_pattern_value_map = m_saved_maps.top();
-                    m_saved_maps.pop();
-                }
-                void finish_match() override { m_saved_maps.pop(); }
-            protected:
-                Matcher& m_matcher;
-                PatternValueMap m_pattern_value_map;
-                std::stack<PatternValueMap> m_saved_maps;
-            };
-        }
-
         PatternMap Matcher::get_pattern_map() const { return as_pattern_map(m_pattern_map); }
         size_t Matcher::add_node(Output<Node> node)
         {
@@ -257,7 +222,6 @@ namespace ngraph
 
             // insert previous matches
             m_pattern_map.insert(previous_matches.cbegin(), previous_matches.cend());
-
             bool is_match = match_value(m_pattern_node, graph_value, m_pattern_map);
             if (is_match)
             {
