@@ -112,25 +112,19 @@ namespace ngraph
                 }
             }
 
-            auto watermark = add_node(real_graph_value);
-
             if (pattern_node->is_pattern())
             {
-                return abort_match(
-                    watermark,
-                    std::static_pointer_cast<op::Pattern>(pattern_node)
-                        ->match_value(*this, real_pattern_value, real_graph_value, pattern_map));
+                return std::static_pointer_cast<op::Pattern>(pattern_node)
+                    ->match_value(*this, real_pattern_value, real_graph_value, pattern_map);
             }
 
             if (pattern_node->get_type_info() == graph_node->get_type_info())
             {
+                auto watermark = add_node(real_graph_value);
                 return abort_match(
                     watermark, match_arguments(real_pattern_value, real_graph_value, pattern_map));
             }
-
-            NGRAPH_DEBUG << "[MATCHER] Aborting at " << *graph_node << " for pattern "
-                         << *pattern_node;
-            return abort_match(watermark, false);
+            return false;
         }
 
         bool Matcher::match_permutation(const OutputVector& pattern_args,

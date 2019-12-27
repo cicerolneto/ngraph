@@ -34,7 +34,9 @@ bool pattern::op::Any::match_value(Matcher& matcher,
 {
     if (m_predicate(graph_value))
     {
-        return matcher.match_arguments(pattern_value, graph_value, pattern_map);
+        auto watermark = matcher.add_node(graph_value);
+        return matcher.abort_match(
+            watermark, matcher.match_arguments(pattern_value, graph_value, pattern_map));
     }
     else
     {

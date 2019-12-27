@@ -48,17 +48,12 @@ namespace ngraph
 
             Matcher(const Output<Node>& pattern_node)
                 : m_pattern_node{pattern_node}
-                , m_depth{0}
-                , m_name{"Unnamed"}
-                , m_strict_mode{false}
             {
             }
 
             Matcher(const Output<Node>& pattern_node, const std::string& name)
                 : m_pattern_node(pattern_node)
-                , m_depth{0}
                 , m_name{name}
-                , m_strict_mode{false}
             {
             }
             /// \brief Constructs a Matcher object
@@ -68,7 +63,6 @@ namespace ngraph
             /// \param strict_mode forces a matcher to consider shapes and ET of nodes
             Matcher(const Output<Node>& pattern_node, const std::string& name, bool strict_mode)
                 : m_pattern_node(pattern_node)
-                , m_depth(0)
                 , m_name(name)
                 , m_strict_mode(strict_mode)
             {
@@ -97,7 +91,8 @@ namespace ngraph
                     {
                         if (matched)
                         {
-                            throw ngraph_error("There's more than two arguments of the same type");
+                            NGRAPH_ERR << "There are more than two arguments of the same type for "
+                                       << *node;
                         }
                         else
                         {
@@ -110,7 +105,8 @@ namespace ngraph
 
             bool is_contained_match(const NodeVector& exclusions = {}, bool ignore_unused = true);
             const NodeVector get_matched_nodes() { return as_node_vector(m_matched_list); }
-            const OutputVector& get_matched_values() { return m_matched_list; }
+            const OutputVector& get_matched_values() const { return m_matched_list; }
+            OutputVector& get_matched_values() { return m_matched_list; }
             void reset() {}
             const std::string& get_name() { return m_name; }
             std::shared_ptr<Node> get_pattern() { return m_pattern_node.as_single_output_node(); }
@@ -144,15 +140,14 @@ namespace ngraph
             PatternValueMap m_pattern_map;
             OutputVector m_matched_list;
 
-        private:
-            static std::string pad(size_t num) { return std::string(num, ' '); }
+        protected:
             bool match_permutation(const OutputVector& pattern_args,
                                    const OutputVector& args,
                                    PatternValueMap& pattern_map);
 
-            size_t m_depth;
-            std::string m_name;
-            bool m_strict_mode;
+            size_t m_depth{0};
+            std::string m_name{"unnamed"};
+            bool m_strict_mode{false};
             bool m_follow_goe{false};
         };
 
@@ -204,7 +199,7 @@ namespace ngraph
             {
                 if (m_matches.count(pattern) == 0)
                 {
-                    throw ngraph_error("No bound nodes for a given label");
+                    NGRAPH_ERR << "No bound names for label " << pattern.get_node_shared_ptr();
                 }
 
                 return as_node_vector(m_matches.at(pattern));

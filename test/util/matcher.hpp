@@ -28,11 +28,9 @@ public:
                              const ngraph::Output<ngraph::Node>& graph_value,
                              ngraph::pattern::PatternValueMap& pattern_map) override
     {
-        if (ngraph::as_type_ptr<::ngraph::op::Parameter>(pattern_value.get_node_shared_ptr()))
+        if (ngraph::is_type<::ngraph::op::Parameter>(pattern_value.get_node_shared_ptr()))
         {
-            bool result =
-                pattern_value.get_node_shared_ptr() ==
-                ngraph::as_type_ptr<::ngraph::op::Parameter>(graph_value.get_node_shared_ptr());
+            bool result = pattern_value == graph_value;
             if (result)
             {
                 m_matched_list.push_back(graph_value.get_node_shared_ptr());

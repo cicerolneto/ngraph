@@ -570,6 +570,8 @@ set (SRC
     pattern/op/pattern.hpp
     pattern/op/skip.cpp
     pattern/op/skip.hpp
+    pattern/op/star.cpp
+    pattern/op/star.hpp
     placement.cpp
     placement.hpp
     provenance.cpp

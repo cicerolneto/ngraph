@@ -40,6 +40,7 @@
 #include "ngraph/pattern/op/label.hpp"
 #include "ngraph/pattern/op/or.hpp"
 #include "ngraph/pattern/op/skip.hpp"
+#include "ngraph/pattern/op/star.hpp"
 #include "ngraph/serializer.hpp"
 #include "util/matcher.hpp"
 #include "util/test_tools.hpp"
@@ -439,6 +440,19 @@ TEST(pattern, matcher)
     // Or
     ASSERT_TRUE(n.match(std::make_shared<pattern::op::Or>(OutputVector{a + b, a - b}), a + b));
     ASSERT_TRUE(n.match(std::make_shared<pattern::op::Or>(OutputVector{a + b, a - b}), a - b));
+
+    // Star
+    {
+        auto star = std::make_shared<pattern::op::Star>(OutputVector{});
+        star->set_output_type(0, element::f32, Shape{});
+        auto pattern = star + star;
+        star->set_repeat(pattern);
+        ASSERT_TRUE(n.match(pattern, ((a + b) + (b + a) + a)));
+        for (auto node : n.get_matched_nodes())
+        {
+            cerr << *node << endl;
+        }
+    }
 
     // strict mode
     {

@@ -14,36 +14,34 @@
 // limitations under the License.
 //*****************************************************************************
 
-#include "ngraph/pattern/op/any_of.hpp"
+#include "ngraph/pattern/op/star.hpp"
 #include "ngraph/pattern/matcher.hpp"
 
 using namespace std;
 using namespace ngraph;
 
-constexpr NodeTypeInfo pattern::op::AnyOf::type_info;
+constexpr NodeTypeInfo pattern::op::Star::type_info;
 
-const NodeTypeInfo& pattern::op::AnyOf::get_type_info() const
+const NodeTypeInfo& pattern::op::Star::get_type_info() const
 {
     return type_info;
 }
 
-bool pattern::op::AnyOf::match_value(Matcher& matcher,
-                                     const Output<Node>& pattern_value,
-                                     const Output<Node>& graph_value,
-                                     PatternValueMap& pattern_map)
+bool pattern::op::Star::match_value(Matcher& matcher,
+                                    const Output<Node>& pattern_value,
+                                    const Output<Node>& graph_value,
+                                    PatternValueMap& pattern_map)
 {
-    auto watermark = matcher.add_node(graph_value);
-    if (m_predicate(graph_value))
+    PatternValueMap copy = pattern_map;
+    Output<Node> repeat{m_repeat_node, m_repeat_index};
+    if (matcher.match_value(repeat, graph_value, copy))
     {
-        for (auto arg : graph_value.get_node_shared_ptr()->input_values())
-        {
-            PatternValueMap copy{pattern_map};
-            if (matcher.match_value(input_value(0), arg, copy))
-            {
-                pattern_map.insert(begin(copy), end(copy));
-                return true;
-            }
-        }
+        pattern_map = copy;
+        return true;
     }
-    return matcher.abort_match(watermark, false);
+    if (get_input_size() == 0)
+    {
+        return true;
+    }
+    return matcher.match_value(input_value(0), graph_value, pattern_map);
 }

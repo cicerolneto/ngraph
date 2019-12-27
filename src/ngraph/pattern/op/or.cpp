@@ -1,3 +1,19 @@
+//*****************************************************************************
+// Copyright 2017-2019 Intel Corporation
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//*****************************************************************************
+
 #include "ngraph/pattern/op/or.hpp"
 #include "ngraph/pattern/matcher.hpp"
 
@@ -16,6 +32,7 @@ bool pattern::op::Or::match_value(Matcher& matcher,
                                   const Output<Node>& graph_value,
                                   PatternValueMap& pattern_map)
 {
+    auto watermark = matcher.add_node(graph_value);
     for (auto input_value : input_values())
     {
         PatternValueMap copy(pattern_map);
@@ -25,5 +42,5 @@ bool pattern::op::Or::match_value(Matcher& matcher,
             return true;
         }
     }
-    return false;
+    return matcher.abort_match(watermark, false);
 }

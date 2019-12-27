@@ -32,12 +32,9 @@ bool pattern::op::Skip::match_value(Matcher& matcher,
                                     const Output<Node>& graph_value,
                                     PatternValueMap& pattern_map)
 {
-    if (m_predicate(graph_value))
-    {
-        return matcher.match_arguments(pattern_value, graph_value, pattern_map);
-    }
-    else
-    {
-        return matcher.match_value(input_value(0), graph_value, pattern_map);
-    }
+    auto watermark = matcher.add_node(graph_value);
+    return matcher.abort_match(
+        watermark,
+        m_predicate(graph_value) ? matcher.match_arguments(pattern_value, graph_value, pattern_map)
+                                 : matcher.match_value(input_value(0), graph_value, pattern_map));
 }

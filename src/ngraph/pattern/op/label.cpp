@@ -32,6 +32,7 @@ bool pattern::op::Label::match_value(Matcher& matcher,
                                      const Output<Node>& graph_value,
                                      PatternValueMap& pattern_map)
 {
+    auto watermark = matcher.add_node(graph_value);
     auto label = as_type_ptr<Label>(pattern_value.get_node_shared_ptr());
     if (pattern_map.count(pattern_value))
     {
@@ -56,5 +57,5 @@ bool pattern::op::Label::match_value(Matcher& matcher,
         }
     }
 
-    return false;
+    return matcher.abort_match(watermark, false);
 }

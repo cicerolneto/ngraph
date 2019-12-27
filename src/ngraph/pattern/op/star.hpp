@@ -25,28 +25,46 @@ namespace ngraph
     {
         namespace op
         {
-            /// \brief Ors are used to allow on of several patterns
-            class NGRAPH_API Or : public Pattern
+            /// \brief Stars are used to allow repeat patterns
+            class NGRAPH_API Star : public Pattern
             {
             public:
-                static constexpr NodeTypeInfo type_info{"patternOr", 0};
+                static constexpr NodeTypeInfo type_info{"patternStar", 0};
                 const NodeTypeInfo& get_type_info() const override;
-                /// \brief creates an Or node matching one of several sub-patterns
-                /// \param patterns The patterns that can match
-                Or(const OutputVector& patterns, ValuePredicate pred)
-                    : Pattern(patterns, pred)
+                /// \brief Creates a Star pattern
+                /// \param pattern the repeating pattern
+                /// \param labels Labels where the repeat may occur
+                Star(const OutputVector& exit, ValuePredicate pred)
+                    : Pattern(exit, pred)
                 {
                 }
 
-                Or(const OutputVector& patterns)
-                    : Or(patterns, [](const Output<Node>&) { return true; })
+                Star(const OutputVector& exit)
+                    : Star(exit, [](const Output<Node>&) { return true; })
                 {
+                }
+
+                void set_repeat(const Output<Node>& repeat)
+                {
+                    m_repeat_node = repeat.get_node();
+                    m_repeat_index = repeat.get_index();
+                }
+
+                Output<Node> get_repeat() const
+                {
+                    return m_repeat_node == nullptr
+                               ? Output<Node>()
+                               : Output<Node>{m_repeat_node->shared_from_this(), m_repeat_index};
                 }
 
                 bool match_value(pattern::Matcher& matcher,
                                  const Output<Node>& pattern_value,
                                  const Output<Node>& graph_value,
                                  PatternValueMap& pattern_map) override;
+
+            protected:
+                Node* m_repeat_node{nullptr};
+                size_t m_repeat_index{0};
             };
         }
     }
